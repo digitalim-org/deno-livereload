@@ -1,0 +1,7 @@
+{
+    "imports": {
+        "config": "./config.ts",
+        "asserts": "https://deno.land/std@0.119.0/testing/asserts.ts",
+        "http": "https://deno.land/std@0.119.0/http/server.ts"
+    }
+}

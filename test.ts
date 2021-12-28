@@ -39,6 +39,13 @@ describe("WebSocket", () => {
   let webSocket: WebSocket;
   beforeEach(() => {
     webSocket = new WebSocket(`ws://${host}:${port}/livereload`);
+    webSocket.onerror = (evt) => {
+      if (evt instanceof ErrorEvent) {
+        fail(evt.message);
+      } else {
+        fail("WebSocket failed to connect");
+      }
+    };
   });
   afterEach(() => {
     webSocket.close();
@@ -51,11 +58,26 @@ describe("WebSocket", () => {
       webSocket.onopen = () => {
         resolve();
       };
-      webSocket.onerror = (evt) => {
-        if (evt instanceof ErrorEvent) {
-          fail(evt.message);
-        } else {
-          fail("WebSocket failed to connect");
+    });
+  });
+  it("sends a 'hello' command with official-7 protocol on open", () => {
+    return new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        fail("Timed out");
+      }, 500);
+      webSocket.onmessage = (ev) => {
+        clearTimeout(timeout);
+        try {
+          const data = JSON.parse(ev.data);
+          assertEquals(data.command, "hello");
+          assertEquals(
+            data.protocols[0],
+            "http://livereload.com/protocols/official-7",
+          );
+          resolve();
+        } catch (e) {
+          console.error(e);
+          fail("Message must be JSON");
         }
       };
     });

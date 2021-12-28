@@ -18,7 +18,12 @@ function handler(req: Request): Response {
   if (isWebSocketRequest(req)) {
     const { response, socket } = Deno.upgradeWebSocket(req);
 
-    socket.onopen = () => {};
+    socket.onopen = () => {
+      socket.send(JSON.stringify({
+        command: "hello",
+        protocols: ["http://livereload.com/protocols/official-7"],
+      }));
+    };
     socket.onmessage = () => {};
     socket.onerror = (evt) => {
       console.error("server err:::" + (evt as ErrorEvent).message);

@@ -1,24 +1,31 @@
-const noOp = () => Promise.resolve();
-const isPromise = (candidate: unknown) => candidate instanceof Promise;
-
 interface Test {
   name: string;
   fn: (t: Deno.TestContext) => void | Promise<void>;
 }
 
+type Hook = () => void | Promise<void>;
+type HookPromise = () => Promise<void>;
+type HookBucket = Record<string, HookPromise>;
+
+const noOpHookPromise: HookPromise = () => Promise.resolve();
+const isPromise = (candidate: unknown) => candidate instanceof Promise;
+let groupCursor: string;
+
 class TestRunner {
   #tests: Record<string, Test[]> = {};
-  #beforeEach = noOp;
-  #afterEach = noOp;
-  #hasStarted = false;
-  #pendingTests = 0;
+  #beforeEach: HookBucket = {
+    global: noOpHookPromise,
+  };
+  #afterEach: HookBucket = {
+    global: noOpHookPromise,
+  };
 
-  setBeforeEach(fn: () => Promise<void>) {
-    this.#beforeEach = fn;
+  setBeforeEach(fn: HookPromise, group: string) {
+    this.#beforeEach[group] = fn;
   }
 
-  setAfterEach(fn: () => Promise<void>) {
-    this.#afterEach = fn;
+  setAfterEach(fn: HookPromise, group: string) {
+    this.#afterEach[group] = fn;
   }
 
   addTest(test: Test, group: string) {
@@ -27,25 +34,32 @@ class TestRunner {
   }
 
   async runGroup(group: string) {
-    await Promise.all(this.#tests[group].map((test) => this.testWrapper(test)));
+    await Promise.all(
+      this.#tests[group].map((test) =>
+        this.testWrapper(
+          test,
+          this.#beforeEach[group] || noOpHookPromise,
+          this.#afterEach[group] || noOpHookPromise,
+        )
+      ),
+    );
   }
 
-  testWrapper(test: Test) {
-    this.#pendingTests++;
+  testWrapper(test: Test, _beforeEach: HookPromise, _afterEach: HookPromise) {
     Deno.test(test.name, async (t) => {
-      await this.#beforeEach();
+      await this.#beforeEach.global();
+      await _beforeEach();
       const res = test.fn(t);
       if (res instanceof Promise) {
         await res;
       }
-      await this.#afterEach();
+      await _afterEach();
+      await this.#afterEach.global();
     });
   }
 }
 
 const testRunner = new TestRunner();
-
-let groupCursor: string;
 
 export const describe = (
   name: string,
@@ -74,10 +88,10 @@ const promiseWrapper = (fn: (...args: unknown[]) => void | Promise<void>) =>
       }
     });
 
-export const afterEach = (fn: () => void | Promise<void>) => {
-  testRunner.setAfterEach(promiseWrapper(fn));
+export const afterEach = (fn: Hook) => {
+  testRunner.setAfterEach(promiseWrapper(fn), groupCursor || "global");
 };
 
-export const beforeEach = (fn: () => void | Promise<void>) => {
-  testRunner.setBeforeEach(promiseWrapper(fn));
+export const beforeEach = (fn: Hook) => {
+  testRunner.setBeforeEach(promiseWrapper(fn), groupCursor || "global");
 };

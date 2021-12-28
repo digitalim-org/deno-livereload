@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "asserts";
+import { assert, assertEquals, fail } from "asserts";
 import { start, stop } from "./mod.ts";
 import config from "config";
 import { afterEach, beforeEach, describe, it } from "./test-helpers.ts";
@@ -19,7 +19,7 @@ afterEach(async () => {
   await delay(10);
 });
 
-describe("HTTP Server", () => {
+describe("HTTP", () => {
   it(`listens on the LiveReload port ${port}`, async () => {
     const foo = await fetch(`${protocol}://${host}:${port}`);
     await foo.body!.cancel();
@@ -32,5 +32,32 @@ describe("HTTP Server", () => {
 
     const expected = Deno.readTextFileSync("./livereload.min.js");
     assertEquals(script, expected, "livereload.js is served");
+  });
+});
+
+describe("WebSocket", () => {
+  let webSocket: WebSocket;
+  beforeEach(() => {
+    webSocket = new WebSocket(`ws://${host}:${port}/livereload`);
+  });
+  afterEach(() => {
+    webSocket.close();
+    webSocket.onerror = () => {};
+    webSocket.onopen = () => {};
+  });
+
+  it("establishes a WebSocket connection", () => {
+    return new Promise<void>((resolve) => {
+      webSocket.onopen = () => {
+        resolve();
+      };
+      webSocket.onerror = (evt) => {
+        if (evt instanceof ErrorEvent) {
+          fail(evt.message);
+        } else {
+          fail("WebSocket failed to connect");
+        }
+      };
+    });
   });
 });

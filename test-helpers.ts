@@ -1,4 +1,4 @@
-const noOp = () => {};
+const noOp = () => Promise.resolve();
 const isPromise = (candidate: unknown) => candidate instanceof Promise;
 
 interface Test {
@@ -8,42 +8,22 @@ interface Test {
 
 class TestRunner {
   #tests: Record<string, Test[]> = {};
-  #beforeAll = noOp;
-  #afterAll = noOp;
+  #beforeEach = noOp;
+  #afterEach = noOp;
   #hasStarted = false;
   #pendingTests = 0;
 
-  setBeforeAll(fn: () => void | Promise<void>) {
-    this.#beforeAll = fn;
+  setBeforeEach(fn: () => Promise<void>) {
+    this.#beforeEach = fn;
   }
 
-  setAfterAll(fn: () => void | Promise<void>) {
-    this.#afterAll = fn;
+  setAfterEach(fn: () => Promise<void>) {
+    this.#afterEach = fn;
   }
 
   addTest(test: Test, group: string) {
     this.#tests[group] = this.#tests[group] || [];
     this.#tests[group].push(test);
-  }
-
-  async #markTestDone() {
-    this.#pendingTests--;
-    if (this.#pendingTests === 0) {
-      console.log("===teardown");
-      const maybePromise = this.#afterAll();
-      if (isPromise(maybePromise)) {
-        await maybePromise;
-      }
-    }
-  }
-
-  async start() {
-    console.log("===setup");
-    const maybePromise = this.#beforeAll();
-    if (isPromise(maybePromise)) {
-      await maybePromise;
-    }
-    this.#hasStarted = true;
   }
 
   async runGroup(group: string) {
@@ -53,23 +33,13 @@ class TestRunner {
   testWrapper(test: Test) {
     this.#pendingTests++;
     Deno.test(test.name, async (t) => {
-      if (!this.#hasStarted) {
-        await this.start();
-      }
+      await this.#beforeEach();
       const res = test.fn(t);
       if (res instanceof Promise) {
-        await res.then(() => {
-          return this.#markTestDone();
-        });
-      } else {
-        const markTestDone = this.#markTestDone();
-        if (isPromise(markTestDone)) {
-          await markTestDone;
-        }
+        await res;
       }
+      await this.#afterEach();
     });
-
-    console.log("===test finished");
   }
 }
 
@@ -93,10 +63,21 @@ export const it = (
   testRunner.addTest({ name, fn }, groupCursor);
 };
 
-export const afterAll = (fn: () => void) => {
-  testRunner.setAfterAll(fn);
+const promiseWrapper = (fn: (...args: unknown[]) => void | Promise<void>) =>
+  (...args: unknown[]) =>
+    new Promise<void>((resolve, reject) => {
+      const maybePromise = fn(...args);
+      if (isPromise(maybePromise)) {
+        (maybePromise as Promise<void>).then(resolve).catch(reject);
+      } else {
+        resolve();
+      }
+    });
+
+export const afterEach = (fn: () => void | Promise<void>) => {
+  testRunner.setAfterEach(promiseWrapper(fn));
 };
 
-export const beforeAll = (fn: () => void | Promise<void>) => {
-  testRunner.setBeforeAll(fn);
+export const beforeEach = (fn: () => void | Promise<void>) => {
+  testRunner.setBeforeEach(promiseWrapper(fn));
 };
